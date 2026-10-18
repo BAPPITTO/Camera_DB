@@ -88,7 +88,7 @@ jobs:
           llvm-nm --version 2>/dev/null ||             ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/" | grep llvm-nm
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --version 3.8.2 --locked
+        uses: taiki-e/install-action@cargo-ndk
 
       # 6. Cross-compile the Rust cdylib for this matrix target --------------------
       - name: cargo ndk -t ${{ matrix.target }} -o app/src/main/jniLibs build --release

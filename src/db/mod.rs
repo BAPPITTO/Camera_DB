@@ -1,7 +1,10 @@
 //! Embedded SQLite database layer: open/migrate/seed + typed CRUD.
 //!
-//! `Database` owns a single `rusqlite::Connection` guarded by a `Mutex`, since
-//! egui renders on the Android UI thread while background tasks may query it.
+//! `Database` owns a single `rusqlite::Connection` guarded by a `Mutex`.
+//! Slint dispatches all callbacks on the Android UI thread, so in practice
+//! access is already serialised and the mutex is defensive-only — it exists
+//! to keep the type `Sync` for any future background-task queries (e.g. the
+//! Kùzu graph indexer) without reworking every call site.
 
 pub mod schema;
 

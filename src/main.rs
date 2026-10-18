@@ -44,6 +44,10 @@ pub extern "C" fn slint_main() {
         ctx.manifest_path(),
         ctx.class_loader()
     );
+    // Touch the Kùzu FFI layer so the linker pulls libkuzu_c_api.a objects
+    // into libmain.so and we log the engine version at startup (spec: assert
+    // engine compatibility on launch). Never fatal — SQLite is authoritative.
+    log::info!("kuzu engine version: {}", gear_compat_lib::graph::Database::engine_version());
 
     if let Err(e) = run() {
         log::error!("fatal: {e}");

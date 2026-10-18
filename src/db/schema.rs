@@ -123,62 +123,83 @@ pub fn seed_flashes() -> Vec<Flash> {
     ]
 }
 
-/// Insert the master gear corpus. Idempotent: existing rows (by UNIQUE
-/// `model_name`) are left untouched so user corrections survive upgrades.
+/// Insert the master gear corpus. Idempotent via a table-level guard: if a
+/// table already holds ANY row we skip seeding it entirely. Seeding by
+/// `model_name` UNIQUE alone would re-insert the canonical row (with a fresh
+/// autoincrement id) whenever a user corrects/renames a master row — leaving
+/// duplicate gear with different ids. Master-data corrections belong in the
+/// issue templates / seed snapshot, not in the live DB, so once seeded the
+/// corpus is left exactly as the user has it until they clear app data.
 pub fn seed(conn: &Connection) -> Result<(), rusqlite::Error> {
     let mut stmt_body = conn.prepare_cached(
-        "INSERT OR IGNORE INTO camera_bodies
+        "INSERT INTO camera_bodies
             (model_name, marketing_name, sensor_type, base_megapixels,
              aps_crop_megapixels, has_ibis, release_year)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
-    for b in &seed_camera_bodies() {
-        stmt_body.execute(rusqlite::params![
-            b.model_name,
-            b.marketing_name,
-            b.sensor_type.as_str(),
-            b.base_megapixels,
-            b.aps_crop_megapixels,
-            b.has_ibis as i64,
-            b.release_year,
-        ])?;
+    if table_empty(conn, "camera_bodies")? {
+        for b in &seed_camera_bodies() {
+            stmt_body.execute(rusqlite::params![
+                b.model_name,
+                b.marketing_name,
+                b.sensor_type.as_str(),
+                b.base_megapixels,
+                b.aps_crop_megapixels,
+                b.has_ibis as i64,
+                b.release_year,
+            ])?;
+        }
     }
 
     let mut stmt_lens = conn.prepare_cached(
-        "INSERT OR IGNORE INTO lenses
+        "INSERT INTO lenses
             (model_name, marketing_name, mount_designation, target_sensor,
              focal_length_min, focal_length_max, max_aperture_min, has_oss, weight_grams)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
-    for l in &seed_lenses() {
-        stmt_lens.execute(rusqlite::params![
-            l.model_name,
-            l.marketing_name,
-            l.mount_designation.as_str(),
-            l.target_sensor.as_str(),
-            l.focal_length_min,
-            l.focal_length_max,
-            l.max_aperture_min,
-            l.has_oss as i64,
-            l.weight_grams,
-        ])?;
+    if table_empty(conn, "lenses")? {
+        for l in &seed_lenses() {
+            stmt_lens.execute(rusqlite::params![
+                l.model_name,
+                l.marketing_name,
+                l.mount_designation.as_str(),
+                l.target_sensor.as_str(),
+                l.focal_length_min,
+                l.focal_length_max,
+                l.max_aperture_min,
+                l.has_oss as i64,
+                l.weight_grams,
+            ])?;
+        }
     }
 
     let mut stmt_flash = conn.prepare_cached(
-        "INSERT OR IGNORE INTO flashes
+        "INSERT INTO flashes
             (model_name, guide_number, trigger_voltage, ttl_compatible)
          VALUES (?1, ?2, ?3, ?4)",
     )?;
-    for f in &seed_flashes() {
-        stmt_flash.execute(rusqlite::params![
-            f.model_name,
-            f.guide_number,
-            f.trigger_voltage,
-            f.ttl_compatible as i64,
-        ])?;
+    if table_empty(conn, "flashes")? {
+        for f in &seed_flashes() {
+            stmt_flash.execute(rusqlite::params![
+                f.model_name,
+                f.guide_number,
+                f.trigger_voltage,
+                f.ttl_compatible as i64,
+            ])?;
+        }
     }
 
     Ok(())
+}
+
+/// True when `table` contains zero rows. Used to make [`seed`] a one-shot
+/// bootstrap instead of a per-launch upsert.
+fn table_empty(conn: &Connection, table: &'static str) -> Result<bool, rusqlite::Error> {
+    // `table` is a hard-coded literal from this module only — never user
+    // input — so interpolation into the SQL is safe here.
+    let sql = format!("SELECT EXISTS (SELECT 1 FROM {table} LIMIT 1)");
+    let has_rows: bool = conn.query_row(&sql, [], |row| row.get(0))?;
+    Ok(!has_rows)
 }
 
 #[cfg(test)]

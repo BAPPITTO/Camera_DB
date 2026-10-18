@@ -82,11 +82,17 @@ ndk = "0.8"
 ndk-context = "0.1"
 
 [profile.release]
-opt-level = "z"
-lto = true
+# Speed over size: the stated goal is a locked 165 Hz scroll on mid-range
+# hardware, so we optimise aggressively and pay for it with binary size
+# (irrelevant for an APK of this scale). `fat` LTO + single codegen unit
+# maximise cross-crate inlining into the hot UI/compat paths.
+opt-level = 3
+lto = "fat"
 codegen-units = 1
 strip = true
-panic = "abort"
+# Keep unwinding so android_logger / panic hooks can surface a Rust backtrace
+# in logcat before the process dies; `abort` would erase that crash signal.
+panic = "unwind"
 
 # ---------------------------------------------------------------------------
 # cargo-apk configuration (used by `.cargo/config.toml` -> `cargo apk`).
@@ -100,7 +106,9 @@ icon = "@mipmap/ic_launcher"
 target_sdk_version = 33
 min_sdk_version = 24
 build_targets = ["aarch64-linux-android", "armv7-linux-androideabi"]
-assets = [["seed_data", "seed_data"]]
+# Bundle the offline seed snapshot into the APK under assets/seed_data.json.
+# cargo-apk's asset table maps relative source path -> in-APK destination dir.
+assets = { "assets/seed_data.json" = ["seed_data"] }
 
 # Slint/femtovg renders through EGL + OpenGL ES 2.0 (GLES 3.x devices run it
 # fine; declaring 2.0 keeps minSdk 24 honest). Vulkan via wgpu is available as

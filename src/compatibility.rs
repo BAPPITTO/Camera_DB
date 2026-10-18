@@ -15,18 +15,6 @@ pub const CROP_FACTOR: f64 = 1.5;
 /// Fraction of the full-frame image circle actually used by an APS-C sensor.
 pub const APS_C_AREA_RATIO: f64 = SensorType::APS_C_AREA_RATIO as f64;
 
-/// Result status strings, kept in sync with [`CompatibilityStatus::as_str`].
-#[allow(dead_code)]
-pub const STATUS_NATIVE_FULL_FRAME: &str = "NATIVE_FULL_FRAME";
-#[allow(dead_code)]
-pub const STATUS_NATIVE_APS_C: &str = "NATIVE_APS_C";
-#[allow(dead_code)]
-pub const STATUS_NATIVE_CROP: &str = "NATIVE_CROP";
-#[allow(dead_code)]
-pub const STATUS_CROP_MODE: &str = "CROP_MODE";
-#[allow(dead_code)]
-pub const STATUS_HIGH_VOLTAGE_RISK: &str = "HIGH_VOLTAGE_RISK";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompatibilityStatus {
     /// Full-frame lens on a full-frame body: native coverage, no caveats.

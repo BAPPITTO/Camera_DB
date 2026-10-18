@@ -67,7 +67,13 @@ jobs:
           echo "ANDROID_PLATFORM=android-${ANDROID_TARGET_SDK}" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
 
-          # Verify the exact platform we need is actually installed before proceeding
+          # ------------------------------------------------------------------
+          # Slint's android-activity backend (i-slint-backend-android-activity)
+          # locates the SDK by scanning $ANDROID_HOME/platforms and panics with
+          # "No Android platforms found" if the directory is empty or missing.
+          # sdkmanager can silently no-op on license/network hiccups, so verify
+          # every artifact here — failing fast beats a cryptic build.rs panic.
+          # ------------------------------------------------------------------
           if [ ! -d "$ANDROID_HOME/platforms/android-$ANDROID_COMPILE_SDK" ]; then
             echo "ERROR: platforms;android-$ANDROID_COMPILE_SDK missing after installation" >&2
             ls "$ANDROID_HOME/platforms" >&2 || true
@@ -77,6 +83,14 @@ jobs:
             echo "ERROR: NDK $ANDROID_NDK_VERSION missing after installation" >&2
             exit 1
           fi
+
+          # The slint backend build script scans $ANDROID_HOME/platforms for any
+          # android-* dir containing android.jar. Show what it will see.
+          ls -l "$ANDROID_HOME/platforms"
+          test -f "$ANDROID_HOME/platforms/android-$ANDROID_COMPILE_SDK/android.jar" || {
+            echo "ERROR: android.jar not found in installed platform" >&2
+            exit 1
+          }
 
       # 4. Setup Rust toolchain with the matrix target --------------------------
       - name: Install Rust toolchain (stable)
@@ -92,7 +106,12 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          # ANDROID_HOME is part of the key on purpose: build-script outputs
+          # (e.g. i-slint-backend-android-activity's "No Android platforms
+          # found" panic) get cached in target/ and would otherwise be replayed
+          # from a run where the SDK platform was missing, even after the SDK
+          # step succeeds.
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ env.ANDROID_HOME }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.target }}-
 

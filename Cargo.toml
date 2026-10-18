@@ -77,7 +77,7 @@ slint = { version = "1.18", default-features = false, features = [
     "renderer-femtovg",
 ] }
 
-android_logger = "0.13"
+android_logger = "0.15"
 ndk = "0.8"
 ndk-context = "0.1"
 

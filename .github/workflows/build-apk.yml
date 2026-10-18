@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  workflow_dispatch: {} # allow manual builds from the Actions tab
 
 permissions:
   contents: write # required by softprops/action-gh-release to create/publish releases
@@ -12,6 +13,12 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   PACKAGE_NAME: camera_db
+  # Keep these two values in sync with app/build.gradle (compileSdk / targetSdk).
+  ANDROID_COMPILE_SDK: "33"
+  ANDROID_TARGET_SDK: "33"
+  ANDROID_MIN_SDK: "24"
+  # Pinned NDK used by build.rs (Kuzu C++ cross-build + LLVM symbol checks).
+  ANDROID_NDK_VERSION: "26.1.10909125"
 
 jobs:
   build-apk:
@@ -24,34 +31,50 @@ jobs:
         #   aarch64-linux-android    -> 64-bit (ARMv8a / arm64-v8a)
         #   armv7-linux-androideabi  -> 32-bit (ARMv7 / armeabi-v7a)
         target: [aarch64-linux-android, armv7-linux-androideabi]
+        include:
+          - target: aarch64-linux-android
+            abi: arm64-v8a
+          - target: armv7-linux-androideabi
+            abi: armeabi-v7a
 
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
+      # Must match ANDROID_NDK_VERSION above (job-level env cannot reference
+      # workflow-level env reliably, so this path is kept literal on purpose).
       ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/26.1.10909125
 
     steps:
       # 1. Checkout code -------------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7 # v7.0.1
 
-      # 2. Setup Java (JDK 17) --------------------------------------------------
+      # 2. Setup Java (JDK 17 — LTS required by AGP 8.x) ------------------------
       - name: Set up JDK 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v6 # v6.1.0
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
 
-      # 3. Setup Android environment using the pre-installed SDK --------------
+      # 3. Setup Android environment using the pre-installed SDK ----------------
       - name: Setup Android Environment
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-37" "ndk;26.1.10909125"
-          echo "ANDROID_PLATFORM=android-37" >> "$GITHUB_ENV"
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_COMPILE_SDK}.0.0" \
+            "ndk;${ANDROID_NDK_VERSION}"
+
+          echo "ANDROID_PLATFORM=android-${ANDROID_TARGET_SDK}" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
-          
-          # Verify platforms are actually installed before proceeding
-          if ! ls "$ANDROID_HOME/platforms" | grep -q 'android-'; then
-            echo "ERROR: No Android platforms found after installation" >&2
+
+          # Verify the exact platform we need is actually installed before proceeding
+          if [ ! -d "$ANDROID_HOME/platforms/android-$ANDROID_COMPILE_SDK" ]; then
+            echo "ERROR: platforms;android-$ANDROID_COMPILE_SDK missing after installation" >&2
+            ls "$ANDROID_HOME/platforms" >&2 || true
+            exit 1
+          fi
+          if [ ! -d "$ANDROID_NDK_HOME" ]; then
+            echo "ERROR: NDK $ANDROID_NDK_VERSION missing after installation" >&2
             exit 1
           fi
 
@@ -62,7 +85,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache cargo registry & target dir
-        uses: actions/cache@v4
+        uses: actions/cache@v6 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -70,9 +93,10 @@ jobs:
             ~/.cargo/bin
             target
           key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.target }}-
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
 
-      # 5. Install build dependencies -------------------------------------------
+      # 5. Install build dependencies --------------------------------------------
       - name: Install CMake and Ninja (required by build.rs Kuzu pipeline)
         run: |
           sudo apt-get update
@@ -80,33 +104,33 @@ jobs:
           cmake --version
           echo "NDK LLVM toolchain verified at: $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-      - name: Install cargo-ndk
-        uses: taiki-e/install-action@v2
+      - name: Install cargo-ndk and cargo-apk
+        uses: taiki-e/install-action@v2 # v2.87.29
         with:
-          tool: cargo-ndk
+          tool: cargo-ndk,cargo-apk
 
-      # 6. Cross-compile the Rust cdylib for this matrix target -----------------
+      # 6. Cross-compile the Rust cdylib for this matrix target ------------------
       - name: Build Rust library with cargo-ndk
         run: |
-          cargo ndk -t "${{ matrix.target }}" -o app/src/main/jniLibs build --release
-          ls -Rl app/src/main/jniLibs || echo "Warning: jniLibs not populated, may be handled by gradle"
+          cargo ndk -t "${{ matrix.abi }}" -o app/src/main/jniLibs build --release
+          ls -Rl app/src/main/jniLibs
 
-      # 7. Build the final APK --------------------------------------------------
-      - name: Install cargo-apk (packaging fallback)
-        run: cargo install cargo-apk --version 0.9.8 --locked
-
-      - name: Grant execute permission for gradlew (if present)
-        run: if [ -f ./gradlew ]; then chmod +x ./gradlew; fi
-
+      # 7. Build the final APK ----------------------------------------------------
+      # The repo ships settings.gradle + app/build.gradle but no Gradle wrapper,
+      # so Gradle must be provisioned explicitly when the wrapper is absent.
       - name: Assemble APK with Gradle (when wrapper exists)
         if: hashFiles('./gradlew') != ''
         run: ./gradlew :app:assembleRelease
 
-      - name: Build APK with cargo-apk (fallback when no gradle wrapper)
+      - name: Setup Gradle (no wrapper in repo)
         if: hashFiles('./gradlew') == ''
-        run: cargo apk build --release
+        uses: gradle/actions/setup-gradle@v6 # v6.4.0
 
-      # 8. Resolve version + ABI suffix, rename assets --------------------------
+      - name: Assemble APK with Gradle CLI (fallback when no wrapper)
+        if: hashFiles('./gradlew') == ''
+        run: gradle --no-daemon :app:assembleRelease
+
+      # 8. Resolve version + ABI suffix, rename assets ----------------------------
       - name: Resolve version and ABI suffix
         id: vars
         run: |
@@ -117,51 +141,56 @@ jobs:
             echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
-          
-          case "${{ matrix.target }}" in
-            aarch64-linux-android)   echo "abi=arm64" >> "$GITHUB_OUTPUT" ;;
-            armv7-linux-androideabi) echo "abi=armv7" >> "$GITHUB_OUTPUT" ;;
-          esac
+          echo "abi=${{ matrix.abi }}" >> "$GITHUB_OUTPUT"
 
       - name: Stage renamed release assets
         id: stage
         env:
           VERSION: ${{ steps.vars.outputs.version }}
-          ABI: ${{ steps.vars.outputs.abi }}
+          ABI: ${{ matrix.abi }}
         run: |
-          # FIXED: Actually look in the target directory where the APK is built
-          APK="$(find target -name '*.apk' -type f | head -n1)"
-          
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK produced in target/ directory" >&2
-            find . -name '*.apk' -type f
+          # Prefer the Gradle output; fall back to any APK under target/ (cargo-apk).
+          APK=""
+          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          elif [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            APK="app/build/outputs/apk/release/app-release.apk"
+          else
+            APK="$(find target app -name '*.apk' -type f 2>/dev/null | head -n1)"
+          fi
+
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            echo "ERROR: No APK produced by Gradle or cargo" >&2
+            find . -name '*.apk' -type f >&2 || true
             exit 1
           fi
-          
+
           echo "Located APK: $APK"
           mkdir -p release-assets
           cp "$APK" "release-assets/${PACKAGE_NAME}_${VERSION}_${ABI}.apk"
-          
+
           # Create a zip of the jniLibs for this target, if it exists
-          if [ -d "app/src/main/jniLibs" ]; then
-            (cd app/src/main/jniLibs && zip -qr "$GITHUB_WORKSPACE/release-assets/${PACKAGE_NAME}_${VERSION}_${ABI}.zip" .)
+          if [ -d "app/src/main/jniLibs/$ABI" ]; then
+            (cd app/src/main/jniLibs && zip -qr "$GITHUB_WORKSPACE/release-assets/${PACKAGE_NAME}_${VERSION}_${ABI}.zip" "$ABI")
           else
-            echo "Warning: jniLibs directory not found, zipping APK directory instead"
+            echo "Warning: jniLibs/$ABI not found, zipping APK instead"
             (cd "$(dirname "$APK")" && zip -j -q "$GITHUB_WORKSPACE/release-assets/${PACKAGE_NAME}_${VERSION}_${ABI}.zip" "$(basename "$APK")")
           fi
-          
+
           ls -l release-assets
           echo "apk=release-assets/${PACKAGE_NAME}_${VERSION}_${ABI}.apk" >> "$GITHUB_OUTPUT"
           echo "zip=release-assets/${PACKAGE_NAME}_${VERSION}_${ABI}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK artifact (per target)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7 # v7.0.2
         with:
-          name: ${{ steps.stage.outputs.apk }}
-          path: ${{ steps.stage.outputs.apk }}
+          name: apk-${{ matrix.abi }}
+          path: |
+            ${{ steps.stage.outputs.apk }}
+            ${{ steps.stage.outputs.zip }}
           if-no-files-found: error
 
-      # 9. Generate SHA256 checksums --------------------------------------------
+      # 9. Generate SHA256 checksums ----------------------------------------------
       - name: Generate SHA256 Checksums
         working-directory: release-assets
         run: |
@@ -171,13 +200,13 @@ jobs:
       - name: Upload checksums artifact (per target)
         uses: actions/upload-artifact@v7
         with:
-          name: checksums-${{ steps.vars.outputs.abi }}
+          name: checksums-${{ matrix.abi }}
           path: release-assets/checksums.txt
           if-no-files-found: error
 
-      # 10. Publish to GitHub Releases ------------------------------------------
+      # 10. Publish to GitHub Releases ----------------------------------------------
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v3 # v3.0.3
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('nightly-{0}', github.sha) }}
           name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('Nightly ({0})', github.sha) }}

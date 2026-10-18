@@ -1,0 +1,32 @@
+# Build configuration for cross-compiling the `gear_compat` binary to Android.
+#
+# `cargo-apk` invokes cargo with these linker settings. When using `cargo-ndk`
+# instead, cargo-ndk injects its own linker flags and this file is only used by
+# plain `cargo build --target aarch64-linux-android` invocations.
+#
+# NOTE: ANDROID_NDK_HOME must be exported in the environment (see
+# .github/workflows/build-apk.yml).
+
+[target.aarch64-linux-android]
+rustflags = [
+    "-C", "link-arg=-landroid",
+    "-C", "link-arg=-llog",
+    "-C", "link-arg=-lOpenSLES",
+]
+
+[target.armv7-linux-androideabi]
+rustflags = [
+    "-C", "link-arg=-landroid",
+    "-C", "link-arg=-llog",
+    "-C", "link-arg=-lOpenSLES",
+]
+
+[target.x86_64-linux-android]
+rustflags = [
+    "-C", "link-arg=-landroid",
+    "-C", "link-arg=-llog",
+    "-C", "link-arg=-lOpenSLES",
+]
+
+[alias]
+apk = "apk"

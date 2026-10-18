@@ -1,0 +1,48 @@
+// Minimal Gradle project consumed by cargo-apk (and usable as a fallback
+// packaging path with cargo-ndk + jniLibs). The Rust native library is copied
+// into src/main/jniLibs/<abi>/libmain.so before `assembleRelease` runs.
+plugins {
+    id 'com.android.application' version '8.2.2'
+}
+
+android {
+    namespace 'com.gearcompat.rust'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.gearcompat.rust"
+        minSdk 24
+        targetSdk 33
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    // The only code is the Rust cdylib; nothing to compile from Java/Kotlin.
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+            assets.srcDirs = [rootProject.file('assets')]
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Debug signing keeps CI builds installable without secrets.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    tasks.registering {
+        // Ensure jniLibs exists even on a fresh clone where cargo-ndk has not
+        // run yet, so gradle never fails on a missing directory.
+        doLast { file('src/main/jniLibs').mkdirs() }
+    }
+}

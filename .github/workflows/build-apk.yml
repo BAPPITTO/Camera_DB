@@ -1,0 +1,157 @@
+name: Build APK & Release
+
+# Runs on every push to main and on every version tag (v1.2.3, v0.1.0-beta.1...).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: write # required by softprops/action-gh-release to create releases
+
+env:
+  CARGO_TERM_COLOR: always
+  ANDROID_NDK_VERSION: "26.1.10909125" # NDK r26b
+  RUST_ANDROID_TARGETS: "aarch64-linux-android armv7-linux-androideabi"
+
+jobs:
+  build-apk:
+    name: Compile Rust -> APK (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            rust_target: aarch64-linux-android
+          - abi: armeabi-v7a
+            rust_target: armv7-linux-androideabi
+
+    steps:
+      # 1. Checkout code ------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Java (JDK 17) -------------------------------------------------
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # 3. Setup Android NDK r26b + SDK ---------------------------------------
+      - name: Set up Android NDK ${{ env.ANDROID_NDK_VERSION }} (r26b)
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26b
+          add-to-path: false
+
+      - name: Export NDK environment
+        run: |
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=${ANDROID_SDK_ROOT:-$HOME/android-sdk}" >> "$GITHUB_ENV"
+
+      - name: Install Android SDK platform-tools / build-tools
+        run: |
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          curl -fsSL -o cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q cmdtools.zip -d "$ANDROID_HOME/cmdline-tools"
+          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+              --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+              "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+
+      # 4. Setup Rust toolchain + Android targets ------------------------------
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Cache cargo registry & target dir
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.rust_target }}-
+
+      # 5. Install cargo-ndk (primary) and cargo-apk (fallback packaging) ------
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 3.8.2 --locked
+
+      - name: Install cargo-apk
+        run: cargo install cargo-apk --version 0.9.8 --locked
+
+      # 6. Cross-compile the Rust cdylib with cargo-ndk ------------------------
+      - name: cargo ndk -t ${{ matrix.abi }} -o app/src/main/jniLibs build --release
+        run: |
+          cargo ndk -t "${{ matrix.abi }}" -o app/src/main/jniLibs build --release
+          ls -Rl app/src/main/jniLibs
+
+      # 7. Build the final APK (gradle wrapper path, cargo-apk fallback) -------
+      - name: Grant execute permission for gradlew (if present)
+        run: if [ -f ./gradlew ]; then chmod +x ./gradlew; fi
+
+      - name: Assemble APK with Gradle (when wrapper exists)
+        if: hashFiles('./gradlew') != ''
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: ./gradlew :app:assembleRelease
+
+      - name: Build APK with cargo-apk (fallback when no gradle wrapper)
+        if: hashFiles('./gradlew') == ''
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: cargo apk build --release
+
+      - name: Locate produced APK
+        id: apk
+        run: |
+          APK="$(find . -path ./target -prune -o -name '*.apk' -print | head -n1 || true)"
+          if [ -z "$APK" ]; then
+            APK="target/${{ matrix.rust_target }}/release/gear_compat.apk"
+          fi
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "name=gear-compat-${{ matrix.abi }}.apk" >> "$GITHUB_OUTPUT"
+          test -f "$APK"
+
+      - name: Upload APK artifact (per ABI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: gear-compat-${{ matrix.abi }}-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      # 8. Publish to GitHub Releases (only from the primary ABI leg so the
+      #    release is not raced by two matrix jobs). Tag pushes use the tag as
+      #    the release name; branch pushes update a rolling "Nightly" prerelease.
+      - name: Resolve release name
+        id: rel
+        if: matrix.abi == 'arm64-v8a'
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=Nightly (${GITHUB_SHA::7})" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload APK to GitHub Release
+        if: matrix.abi == 'arm64-v8a'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'nightly' }}
+          name: ${{ steps.rel.outputs.name }}
+          prerelease: ${{ steps.rel.outputs.prerelease }}
+          files: ${{ steps.apk.outputs.path }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

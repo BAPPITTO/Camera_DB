@@ -1,0 +1,81 @@
+name: Camera Body Request / Correction
+description: Propose a new Sony E-mount camera body or correct an existing record.
+title: "[body] <model_name>"
+labels: ["data", "camera-body"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        All fields are validated against the SQLite `camera_bodies` schema.
+        Sensor size must be **APS-C** or **Full Frame**; anything else will be
+        rejected by the CHECK constraint.
+
+  - type: input
+    id: marketing_name
+    attributes:
+      label: Marketing Name
+      description: As printed on the box, e.g. "Alpha 7 IV".
+      placeholder: Alpha 7 IV
+    validations:
+      required: true
+
+  - type: input
+    id: model_number
+    attributes:
+      label: Model Number
+      description: Order/model code stored in `model_name`, e.g. ILCE-7M4.
+      placeholder: ILCE-7M4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sensor_size
+    attributes:
+      label: Sensor Size
+      description: Maps to `sensor_type` ('APS_C' | 'FULL_FRAME').
+      options:
+        - APS-C
+        - Full Frame
+    validations:
+      required: true
+
+  - type: input
+    id: megapixels
+    attributes:
+      label: Megapixels
+      description: Effective stills resolution (`base_megapixels`), decimal allowed.
+      placeholder: "33.0"
+    validations:
+      required: true
+      pattern: "^[0-9]+(\\.[0-9]{1,2})?$"
+
+  - type: checkboxes
+    id: ibis
+    attributes:
+      label: IBIS
+      description: Does the body have In-Body Image Stabilisation (`has_ibis`)?
+      options:
+        - label: This body has IBIS
+          required: false
+
+  - type: input
+    id: release_year
+    attributes:
+      label: Release Year
+      description: Four-digit year stored in `release_year`.
+      placeholder: "2021"
+    validations:
+      required: true
+      pattern: "^(19|20)[0-9]{2}$"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional Notes
+      description: APS-C crop-mode MP figure, firmware quirks, sources (spec sheets, reviews).
+      placeholder: |
+        Crop mode yields ~14 MP (aps_crop_megapixels = 14).
+        Source: https://...
+      render: markdown
+    validations:
+      required: false

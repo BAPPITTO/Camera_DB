@@ -1,0 +1,98 @@
+[package]
+name = "gear_compat"
+version = "0.1.0"
+edition = "2021"
+description = "Native Android camera gear compatibility app written entirely in Rust (egui/eframe + rusqlite)."
+license = "MIT"
+repository = "https://github.com/your-org/gear-compat-android"
+authors = ["Gear Compat Mobile Team"]
+
+# cargo-apk reads `apk-name` / `apk-activity` from the binary target metadata.
+[[bin]]
+name = "gear_compat"
+path = "src/main.rs"
+
+[lib]
+name = "gear_compat_lib"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+# ---------------------------------------------------------------------------
+# UI: pure native Rust immediate-mode GUI, no webview.
+# Android support = glow renderer + winit's android-native-activity backend.
+# ---------------------------------------------------------------------------
+eframe = { version = "0.28", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "android-native-activity",
+] }
+egui = "0.28"
+
+# ---------------------------------------------------------------------------
+# Local persistence: embedded SQLite, statically bundled (no system lib).
+# The `rusqlite/bundled` feature is declared in the target-specific block
+# below so it also applies to the Android cross-compilation.
+# ---------------------------------------------------------------------------
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# ---------------------------------------------------------------------------
+# Serialization for user-defined custom gear specs.
+# ---------------------------------------------------------------------------
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ---------------------------------------------------------------------------
+# Error handling & misc
+# ---------------------------------------------------------------------------
+thiserror = "1"
+log = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# Re-declare with the bundled SQLite build so the C library cross-compiles
+# into libmain.so instead of linking against a (nonexistent) system sqlite3.
+rusqlite = { version = "0.31", features = ["bundled"] }
+android_logger = "0.13"
+ndk = "0.8"
+ndk-context = "0.1"
+# winit 0.29 enables its Android backend automatically for
+# cfg(target_os = "android"); eframe's `android-native-activity` feature wires
+# it to android-activity's NativeActivity glue. No extra features needed here.
+winit = "0.29.5"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# ---------------------------------------------------------------------------
+# cargo-apk configuration (used by `.cargo/config.toml` -> `cargo apk`).
+# ---------------------------------------------------------------------------
+[package.metadata.android]
+package = "com.gearcompat.rust"
+label = "Gear Compat"
+version_name = "0.1.0"
+version_code = 1
+icon = "@mipmap/ic_launcher"
+target_sdk_version = 33
+min_sdk_version = 24
+build_targets = ["aarch64-linux-android", "armv7-linux-androideabi"]
+assets = [["seed_data", "seed_data"]]
+
+[package.metadata.android.sdk]
+enabled = true
+
+[package.metadata.android.application_activity]
+intent_filter_body = [
+    "- category android.intent.category.LAUNCHER\n- action android.intent.action.MAIN",
+]
+
+[[package.metadata.android.permissions]]
+name = "android.permission.WRITE_EXTERNAL_STORAGE"
+max_sdk_version = "28"
+
+[[package.metadata.android.permissions]]
+name = "android.permission.READ_EXTERNAL_STORAGE"
+max_sdk_version = "28"

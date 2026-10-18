@@ -2,12 +2,13 @@
 name = "gear_compat"
 version = "0.1.0"
 edition = "2021"
-description = "Native Android camera gear compatibility app written entirely in Rust (egui/eframe + rusqlite)."
+description = "Native Android camera gear compatibility app written entirely in Rust (Slint + rusqlite)."
 license = "MIT"
 repository = "https://github.com/your-org/gear-compat-android"
 authors = ["Gear Compat Mobile Team"]
 
-# cargo-apk reads `apk-name` / `apk-activity` from the binary target metadata.
+# cargo-apk / cargo-ndk read the binary target; on Android this cdylib is
+# packaged as libmain.so and entered through `android_main` (NativeActivity).
 [[bin]]
 name = "gear_compat"
 path = "src/main.rs"
@@ -17,22 +18,32 @@ name = "gear_compat_lib"
 crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
+[build-dependencies]
+# Ahead-of-time .slint -> Rust compiler. Runs once per UI change at build time;
+# zero markup parsing happens on the device, which is what keeps frame times
+# flat enough to hold 165 Hz on high-refresh Android panels.
+slint-build = "1.18"
+
 [dependencies]
 # ---------------------------------------------------------------------------
-# UI: pure native Rust immediate-mode GUI, no webview.
-# Android support = glow renderer + winit's android-native-activity backend.
+# UI: Slint - retained-mode, declarative, natively compiled.
+#   * femtovg renderer = hardware-accelerated OpenGL ES 2/3 path on Android
+#     (the same GL context NativeActivity hands out; vsync-locked to the
+#     panel's refresh rate, i.e. 165 Hz capable).
+#   * software renderer is kept as a headless/test fallback only.
+# Default features are off so we never drag Qt/winit/X11 onto the APK.
 # ---------------------------------------------------------------------------
-eframe = { version = "0.28", default-features = false, features = [
-    "default_fonts",
-    "glow",
-    "android-native-activity",
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "renderer-femtovg",
+    "renderer-software",
 ] }
-egui = "0.28"
 
 # ---------------------------------------------------------------------------
 # Local persistence: embedded SQLite, statically bundled (no system lib).
-# The `rusqlite/bundled` feature is declared in the target-specific block
-# below so it also applies to the Android cross-compilation.
+# Declared again in the Android target block below so `bundled` survives the
+# cross-compilation feature resolution.
 # ---------------------------------------------------------------------------
 rusqlite = { version = "0.31", features = ["bundled"] }
 
@@ -52,13 +63,20 @@ log = "0.4"
 # Re-declare with the bundled SQLite build so the C library cross-compiles
 # into libmain.so instead of linking against a (nonexistent) system sqlite3.
 rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Slint's official Android backend: owns the android-activity NativeActivity
+# glue, the surface lifecycle and touch input. aa-05 == android-activity 0.5.x
+# (the version cargo-apk's manifest generation targets).
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-android-activity-05",
+    "renderer-femtovg",
+] }
+
 android_logger = "0.13"
 ndk = "0.8"
 ndk-context = "0.1"
-# winit 0.29 enables its Android backend automatically for
-# cfg(target_os = "android"); eframe's `android-native-activity` feature wires
-# it to android-activity's NativeActivity glue. No extra features needed here.
-winit = "0.29.5"
 
 [profile.release]
 opt-level = "z"
@@ -81,13 +99,24 @@ min_sdk_version = 24
 build_targets = ["aarch64-linux-android", "armv7-linux-androideabi"]
 assets = [["seed_data", "seed_data"]]
 
+# Slint/femtovg renders through EGL + OpenGL ES 2.0 (GLES 3.x devices run it
+# fine; declaring 2.0 keeps minSdk 24 honest). Vulkan via wgpu is available as
+# an opt-in alternative: swap `renderer-femtovg` for `renderer-skia-vulkan` or
+# `unstable-wgpu-30` and bump glEsVersion accordingly.
 [package.metadata.android.sdk]
 enabled = true
 
-[package.metadata.android.application_activity]
-intent_filter_body = [
-    "- category android.intent.category.LAUNCHER\n- action android.intent.action.MAIN",
-]
+# NativeActivity entry contract for the Slint android-activity backend:
+# the loader dlopens libmain.so (crate-type cdylib above) and jumps into the
+# `android_main` symbol exported by slint's backend, which then calls our
+# `slint_main` in src/main.rs.
+[[package.metadata.android.application_activity.intent_filter]]
+name = "android.intent.action.MAIN"
+category = "android.intent.category.LAUNCHER"
+
+[[package.metadata.android.application_activity.meta_data]]
+name = "android.app.lib_name"
+value = "main"
 
 [[package.metadata.android.permissions]]
 name = "android.permission.WRITE_EXTERNAL_STORAGE"

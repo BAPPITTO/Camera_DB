@@ -1,0 +1,460 @@
+// ui/app-window.slint
+//
+// Declarative, retained-mode UI for Gear Compat. Compiled ahead-of-time by
+// `slint-build` (see build.rs) into native Rust code - no interpreter, no
+// webview, no per-frame layout rebuilds. The ListView below is virtualized:
+// only the rows currently intersecting the viewport get realized, so scrolling
+// a 5,000-lens corpus stays at the panel's full refresh rate (165 Hz capable).
+
+import {
+    Button,
+    LineEdit,
+    ScrollView,
+    GroupBox,
+    TabWidget,
+    Text,
+} from "std-widgets.slint";
+
+// ---------------------------------------------------------------------------
+// Row models - one struct per SQLite table, flattened for display. Field names
+// mirror src/models.rs / src/db/schema.rs exactly.
+// ---------------------------------------------------------------------------
+
+export struct BodyRow {
+    id: int,
+    marketing-name: string,
+    model-name: string,
+    sensor-label: string,       // "APS-C" / "Full Frame"
+    megapixels-label: string,   // "33.0 MP"
+    ibis-label: string,         // "IBIS" / "-"
+    year-label: string,         // "2021"
+}
+
+export struct LensRow {
+    id: int,
+    marketing-name: string,
+    model-name: string,
+    mount: string,              // "E" / "FE"
+    target-label: string,       // "APS-C" / "Full Frame"
+    focal-label: string,        // "24-70mm"
+    aperture-label: string,     // "f/2.8"
+    oss-label: string,          // "OSS" / "-"
+    weight-label: string,       // "695 g"
+}
+
+export struct FlashRow {
+    id: int,
+    model-name: string,
+    gn-label: string,           // "GN 46"
+    voltage-label: string,      // "5.0 V"
+    ttl-label: string,          // "TTL" / "Manual"
+    safety-status: string,      // SAFE | HIGH_VOLTAGE_RISK
+    safe: bool,                 // drives the red/green badge
+    message: string,            // full evaluate_flash() explanation
+}
+
+export struct GearRow {
+    id: int,
+    user-name: string,
+    type-label: string,         // SD Card | Battery | Filter
+    specs-summary: string,      // compact JSON summary
+    specs-json: string,         // raw stored JSON (monospace detail view)
+}
+
+export struct NoteRow {
+    text: string,
+}
+
+// ---------------------------------------------------------------------------
+// Status badge for CompatibilityStatus / FlashSafetyStatus strings
+// ---------------------------------------------------------------------------
+
+export component StatusBadge inherits Rectangle {
+    in property <string> status;
+    in property <string> label;
+
+    private static property <color> ok-color: #1b5e20;
+    private static property <color> warn-color: #e65100;
+    private static property <color> crit-color: #b71c1c;
+    private static property <color> info-color: #37474f;
+
+    private static property <color> bg:
+        root.status == "NATIVE_FULL_FRAME" || root.status == "NATIVE_APS_C" || root.status == "SAFE" ? ok-color :
+        root.status == "NATIVE_CROP" || root.status == "CROP_MODE" ? warn-color :
+        root.status == "HIGH_VOLTAGE_RISK" ? crit-color : info-color;
+
+    width: lbl.preferred-width + 20px;
+    height: lbl.preferred-height + 10px;
+    border-radius: 90deg;
+    background: bg;
+
+    lbl := Text {
+        text: root.label;
+        color: white;
+        font-size: 13px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main application window
+// ---------------------------------------------------------------------------
+
+export component AppWindow inherits Window {
+    title: "Gear Compat";
+    preferred-width: 420px;
+    preferred-height: 780px;
+    background: #101418;
+    color: #e6eaf0;
+
+    // ---- data bindings (populated from Rust via set_*) ---------------------
+    in property <[BodyRow]> bodies;
+    in property <[LensRow]> lenses;
+    in property <[FlashRow]> flashes;
+    in property <[GearRow]> custom-gear;
+    in property <[NoteRow]> compat-notes;
+
+    // ---- selection state ----------------------------------------------------
+    in property <int> selected-body-id: -1;
+    in property <int> selected-lens-id: -1;
+    in property <int> selected-flash-id: -1;
+
+    in property <string> body-label: "-";
+    in property <string> lens-label: "-";
+    in property <string> status-code: "UNKNOWN";
+    in property <string> status-label: "Select a body and a lens";
+    in property <string> focal-label: "-";
+    in property <string> mp-label: "-";
+    in property <string> penalty-label: "";
+    in property <string> flash-message: "";
+    in property <string> flash-status: "";
+    in property <bool> flash-safe: true;
+    in property <string> gear-type-label: "SD Card";
+    in property <string> gear-specs: "{\"read_speed\": 300, \"write_speed\": 260, \"capacity_gb\": 128}";
+    in property <string> status-line: "";
+
+    // ---- callbacks (implemented in src/ui/mod.rs) --------------------------
+    callback select-body(id: int);
+    callback select-lens(id: int);
+    callback select-flash(id: int);
+    callback add-custom-gear(name: string, specs-json: string);
+    callback delete-custom-gear(id: int);
+    callback cycle-gear-type();
+    callback reload();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        // Header -------------------------------------------------------------
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start-x;
+            Text {
+                text: "GEAR COMPAT";
+                font-size: 18px;
+                font-weight: 700;
+                color: #ffb74d;
+                vertical-alignment: center;
+            }
+            Rectangle { width: 100%; } // spacer
+            Button {
+                text: "\u{21bb}";
+                clicked => { root.reload(); }
+            }
+        }
+
+        TabWidget {
+            // ================================================================
+            tab-compat := TabItem {
+                title: "Compatibility";
+                ScrollView {
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 10px;
+
+                        // Body picker -----------------------------------------
+                        GroupBox {
+                            title: "Camera body";
+                            height: 220px;
+                            ListView {
+                                for b in bodies: Rectangle {
+                                    height: 52px;
+                                    b-row := TouchArea {
+                                        clicked => { root.select-body(b.id); }
+                                        Rectangle {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            radius: 6px;
+                                            border-width: b.id == root.selected-body-id ? 2px : 0px;
+                                            border-color: #ffb74d;
+                                            background: b.id == root.selected-body-id ? #1e2a36 : transparent;
+                                            HorizontalLayout {
+                                                padding: 8px;
+                                                spacing: 8px;
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    Text { text: b.marketing-name; font-size: 15px; font-weight: 600; color: #e6eaf0; }
+                                                    Text { text: b.model-name + " \u{b7} " + b.sensor-label + " \u{b7} " + b.megapixels-label; font-size: 12px; color: #90a4ae; }
+                                                }
+                                                Rectangle { width: 100%; }
+                                                Text { text: b.ibis-label + " \u{b7} " + b.year-label; font-size: 12px; color: #90a4ae; vertical-alignment: center; }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Lens picker -----------------------------------------
+                        GroupBox {
+                            title: "Lens";
+                            height: 260px;
+                            ListView {
+                                for l in lenses: Rectangle {
+                                    height: 56px;
+                                    l-row := TouchArea {
+                                        clicked => { root.select-lens(l.id); }
+                                        Rectangle {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            radius: 6px;
+                                            border-width: l.id == root.selected-lens-id ? 2px : 0px;
+                                            border-color: #4fc3f7;
+                                            background: l.id == root.selected-lens-id ? #16242f : transparent;
+                                            HorizontalLayout {
+                                                padding: 8px;
+                                                spacing: 8px;
+                                                Rectangle {
+                                                    width: 44px;
+                                                    height: 26px;
+                                                    border-radius: 6px;
+                                                    background: l.mount == "FE" ? #2e7d32 : #ef6c00;
+                                                    Text {
+                                                        text: l.mount;
+                                                        color: white;
+                                                        font-size: 13px;
+                                                        font-weight: 700;
+                                                        horizontal-alignment: center;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    Text { text: l.marketing-name; font-size: 14px; font-weight: 600; color: #e6eaf0; elide: ellipsis; }
+                                                    Text { text: l.focal-label + " \u{b7} " + l.aperture-label + " \u{b7} " + l.target-label + " \u{b7} " + l.oss-label + " \u{b7} " + l.weight-label; font-size: 11px; color: #90a4ae; elide: ellipsis; }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Result card -----------------------------------------
+                        result-card := Rectangle {
+                            height: res-vl.height + 24px;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #2f3b47;
+                            background: #172029;
+
+                            res-vl := VerticalLayout {
+                                padding: 12px;
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    StatusBadge {
+                                        status: root.status-code;
+                                        label: root.status-label;
+                                    }
+                                    Rectangle { width: 100%; }
+                                }
+                                Text { text: "Body:  " + root.body-label; font-size: 13px; color: #b0bec5; }
+                                Text { text: "Lens:  " + root.lens-label; font-size: 13px; color: #b0bec5; }
+                                HorizontalLayout {
+                                    spacing: 16px;
+                                    VerticalLayout {
+                                        Text { text: "EFFECTIVE FL"; font-size: 10px; color: #78909c; }
+                                        Text { text: root.focal-label; font-size: 17px; font-weight: 700; color: #4fc3f7; }
+                                    }
+                                    VerticalLayout {
+                                        Text { text: "EFFECTIVE RES"; font-size: 10px; color: #78909c; }
+                                        Text { text: root.mp-label; font-size: 17px; font-weight: 700; color: #4fc3f7; }
+                                    }
+                                    Rectangle { width: 100%; }
+                                }
+                                Text {
+                                    visible: root.penalty-label != "";
+                                    text: root.penalty-label;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: #ffcc80;
+                                }
+                                ForEach n in compat-notes: Text {
+                                    text: "\u{2022} " + n.text;
+                                    wrap: word-wrap;
+                                    font-size: 12px;
+                                    color: #b0bec5;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ================================================================
+            tab-flashes := TabItem {
+                title: "Flashes";
+                ListView {
+                    for f in flashes: Rectangle {
+                        height: fl-item.height + 20px;
+                        fl-touch := TouchArea {
+                            clicked => { root.select-flash(f.id); }
+                        }
+                        fl-item := HorizontalLayout {
+                            x: 10px; y: 10px; width: parent.width - 20px;
+                            spacing: 10px;
+                            enabled: false; // clicks pass through to TouchArea
+                            Rectangle {
+                                width: 8px;
+                                min-width: 8px;
+                                border-radius: 4px;
+                                background: f.safe ? #2e7d32 : #b71c1c;
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: f.model-name; font-size: 15px; font-weight: 700; color: #e6eaf0; }
+                                    Rectangle { width: 100%; }
+                                    StatusBadge { status: f.safety-status; label: f.ttl-label; }
+                                }
+                                Text { text: f.gn-label + " \u{b7} Trigger " + f.voltage-label + " \u{b7} " + f.safety-status; font-size: 12px; color: f.safe ? #90a4ae : #ef9a9a; }
+                                Text {
+                                    visible: f.message != "";
+                                    text: f.message;
+                                    wrap: word-wrap;
+                                    font-size: 11px;
+                                    color: f.safe ? #78909c : #ffcdd2;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ================================================================
+            tab-gear := TabItem {
+                title: "Custom Gear";
+                ScrollView {
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 10px;
+
+                        GroupBox {
+                            title: "Add gear (user_name / gear_type / specs_json)";
+                            VerticalLayout {
+                                spacing: 8px;
+                                gear-name-field := LineEdit {
+                                    placeholder-text: "e.g. My TOUGH G128";
+                                }
+                                Button {
+                                    text: "Type: " + root.gear-type-label;
+                                    clicked => { root.cycle-gear-type(); }
+                                }
+                                gear-specs-field := LineEdit {
+                                    placeholder-text: "{ \"read_speed\": 300 }";
+                                    text <=> root.gear-specs;
+                                }
+                                Button {
+                                    text: "Save to SQLite";
+                                    primary: true;
+                                    clicked => {
+                                        root.add-custom-gear(
+                                            gear-name-field.text,
+                                            gear-specs-field.text);
+                                        gear-name-field.text = "";
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Stored rows (" + custom-gear.length + ")";
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: #b0bec5;
+                        }
+
+                        Rectangle {
+                            height: 260px;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #2f3b47;
+                            clip: true;
+                            ListView {
+                                for g in custom-gear: Rectangle {
+                                    height: 64px;
+                                    HorizontalLayout {
+                                        padding: 8px;
+                                        spacing: 8px;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text { text: g.user-name; font-size: 14px; font-weight: 600; color: #e6eaf0; elide: ellipsis; }
+                                            Text { text: g.type-label + " \u{b7} " + g.specs-summary; font-size: 11px; color: #90a4ae; elide: ellipsis; }
+                                        }
+                                        Rectangle { width: 100%; }
+                                        Button {
+                                            text: "Delete";
+                                            clicked => { root.delete-custom-gear(g.id); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ================================================================
+            tab-about := TabItem {
+                title: "About";
+                ScrollView {
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+                        Text { text: "Sony E-mount compatibility, offline."; font-size: 16px; font-weight: 700; color: #ffb74d; }
+                        Text {
+                            wrap: word-wrap;
+                            font-size: 13px;
+                            color: #b0bec5;
+                            text: "All camera bodies, lenses, flashes and user-defined gear live in an embedded SQLite database on this device. No backend, no network calls, no telemetry.";
+                        }
+                        Text {
+                            wrap: word-wrap;
+                            font-size: 13px;
+                            color: #b0bec5;
+                            text: "UI rendered with Slint (retained mode, OpenGL ES / Vulkan backends) inside a NativeActivity. Lists are virtualized so the full FE lens catalogue scrolls at the panel's refresh rate.";
+                        }
+                        Text {
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: #78909c;
+                            text: "Rules: E glass on FF body -> CROP_MODE (FL x1.5, MP x0.444). FE glass on APS-C body -> NATIVE_CROP (FL x1.5). Hot-shoe trigger voltage > 6.0 V -> HIGH_VOLTAGE_RISK.";
+                        }
+                        Text {
+                            visible: root.status-line != "";
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: #4fc3f7;
+                            text: root.status-line;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

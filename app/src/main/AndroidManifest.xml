@@ -14,8 +14,13 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
-    <!-- GLES 2.0 is required by the glow renderer used by eframe. -->
+    <!-- Slint's FemtoVG renderer draws through EGL + OpenGL ES 2.0. Every
+         GLES 3.x device (and thus every 165 Hz panel shipping today) is
+         backwards compatible; declaring 2.0 keeps minSdk 24 honest. -->
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
+    <!-- Optional Vulkan path (renderer-skia-vulkan / wgpu builds advertise it).
+         Not required so GLES-only devices still install. -->
+    <uses-feature android:name="android.hardware.vulkan.level" android:required="false" />
 
     <application
         android:label="Gear Compat"
@@ -24,10 +29,14 @@
         android:supportsRtl="true"
         android:extractNativeLibs="true">
 
-        <!-- winit/eframe drives NativeActivity; metadata keys are mandatory. -->
+        <!-- Slint's backend-android-activity drives NativeActivity. The
+             `android.app.lib_name` meta-data tells the loader which cdylib to
+             dlopen (renamed to libmain.so by cargo-apk/cargo-ndk); Slint's
+             android-activity integration exports `android_main` from that .so
+             and calls the app's `slint_main`. -->
         <activity
             android:name="android.app.NativeActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
+            android:configChanges="orientation|keyboardHidden|screenSize|uiMode|density"
             android:exported="true"
             android:launchMode="singleTask">
 
@@ -35,10 +44,11 @@
                 android:name="android.app.lib_name"
                 android:value="main" />
 
-            <!-- Tell winit's Android backend which Rust fn to enter. -->
+            <!-- High-refresh surfaces: request the display's native mode; the
+                 compositor grants up to 165 Hz where the panel supports it. -->
             <meta-data
-                android:name="android.app.func_name"
-                android:value="android_main" />
+                android:name="android.max_aspect"
+                android:value="2.4" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

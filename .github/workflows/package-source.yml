@@ -1,0 +1,58 @@
+name: Package Source Code
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package-source:
+    name: Zip source & attach to release
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Zip the repository, excluding .git / target / build directories
+      - name: Create source archive
+        run: |
+          zip -r source-code-${{ github.sha }}.zip . -x ".git/*" "target/*"
+          zip -r source-code-${{ github.sha }}.zip . --exclude "*build/*" >/dev/null || true
+          ls -lh source-code-${{ github.sha }}.zip
+          unzip -l source-code-${{ github.sha }}.zip | grep -E "(Cargo.toml|src/main.rs)" 
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-code-zip
+          path: source-code-${{ github.sha }}.zip
+          if-no-files-found: error
+
+      # 3. Attach the zip to the same GitHub Release used by build-apk.yml.
+      #    (GitHub Packages hosts binary registries only; raw source archives
+      #    belong on GitHub Releases.)
+      - name: Resolve release name
+        id: rel
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=Nightly (${GITHUB_SHA::7})" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload source zip to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'nightly' }}
+          name: ${{ steps.rel.outputs.name }}
+          prerelease: ${{ steps.rel.outputs.prerelease }}
+          files: source-code-${{ github.sha }}.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,99 @@
+name: Lens Request / Correction
+description: Propose a new Sony E/FE lens or correct an existing record.
+title: "[lens] <model_name>"
+labels: ["data", "lens"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Validated against the SQLite `lenses` schema. Mount is **E** (APS-C optics)
+        or **FE** (full-frame image circle); target sensor is **APS-C** or **Full Frame**.
+
+  - type: input
+    id: marketing_name
+    attributes:
+      label: Marketing Name
+      description: e.g. "FE 24-70mm F2.8 GM II".
+      placeholder: FE 24-70mm F2.8 GM II
+    validations:
+      required: true
+
+  - type: input
+    id: model_number
+    attributes:
+      label: Model Number
+      description: Order code stored in `model_name`, e.g. SEL2470GM2.
+      placeholder: SEL2470GM2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mount
+    attributes:
+      label: Mount
+      description: Maps to `mount_designation` ('E' | 'FE').
+      options:
+        - E
+        - FE
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target_sensor
+    attributes:
+      label: Target Sensor
+      description: Image-circle coverage, maps to `target_sensor`.
+      options:
+        - APS-C
+        - Full Frame
+    validations:
+      required: true
+
+  - type: input
+    id: focal_length_min
+    attributes:
+      label: Focal Length Min (mm)
+      description: Wide end, `focal_length_min`. Repeat the value for primes.
+      placeholder: "24"
+    validations:
+      required: true
+      pattern: "^[0-9]+(\\.[0-9])?$"
+
+  - type: input
+    id: focal_length_max
+    attributes:
+      label: Focal Length Max (mm)
+      description: Tele end, `focal_length_max`. Must be >= min.
+      placeholder: "70"
+    validations:
+      required: true
+      pattern: "^[0-9]+(\\.[0-9])?$"
+
+  - type: input
+    id: max_aperture
+    attributes:
+      label: Max Aperture
+      description: Widest aperture at the wide end (`max_aperture_min`), e.g. 2.8.
+      placeholder: "2.8"
+    validations:
+      required: true
+      pattern: "^[0-9]+(\\.[0-9])?$"
+
+  - type: checkboxes
+    id: oss
+    attributes:
+      label: OSS
+      description: Does the lens carry Optical SteadyShot (`has_oss`)?
+      options:
+        - label: This lens has OSS
+          required: false
+
+  - type: input
+    id: weight
+    attributes:
+      label: Weight (grams)
+      description: Integer grams, stored in `weight_grams`.
+      placeholder: "695"
+    validations:
+      required: false
+      pattern: "^[0-9]+$"

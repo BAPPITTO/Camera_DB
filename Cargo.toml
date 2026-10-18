@@ -1,0 +1,138 @@
+[package]
+name = "gear_compat"
+version = "0.1.0"
+edition = "2021"
+description = "Native Android camera gear compatibility app written entirely in Rust (Slint + rusqlite)."
+license = "MIT"
+repository = "https://github.com/your-org/gear-compat-android"
+authors = ["Gear Compat Mobile Team"]
+
+# cargo-apk / cargo-ndk read the binary target; on Android this cdylib is
+# packaged as libmain.so and entered through `android_main` (NativeActivity).
+[[bin]]
+name = "gear_compat"
+path = "src/main.rs"
+
+# Build script: Slint AOT compilation + Kuzu C++/CMake NDK cross-build with
+# pre-link llvm-nm symbol verification. Pinned explicitly so it can never be
+# silently dropped from the target list.
+[lib]
+name = "gear_compat_lib"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[build-dependencies]
+# Ahead-of-time .slint -> Rust compiler. Runs once per UI change at build time;
+# zero markup parsing happens on the device, which is what keeps frame times
+# flat enough to hold 165 Hz on high-refresh Android panels.
+slint-build = "1.18"
+
+[dependencies]
+# ---------------------------------------------------------------------------
+# UI: Slint - retained-mode, declarative, natively compiled.
+#   * femtovg renderer = hardware-accelerated OpenGL ES 2/3 path on Android
+#     (the same GL context NativeActivity hands out; vsync-locked to the
+#     panel's refresh rate, i.e. 165 Hz capable).
+#   * software renderer is kept as a headless/test fallback only.
+# Default features are off so we never drag Qt/winit/X11 onto the APK.
+# ---------------------------------------------------------------------------
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "renderer-femtovg",
+    "renderer-software",
+] }
+
+# ---------------------------------------------------------------------------
+# Local persistence: embedded SQLite, statically bundled (no system lib).
+# Declared again in the Android target block below so `bundled` survives the
+# cross-compilation feature resolution.
+# ---------------------------------------------------------------------------
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# ---------------------------------------------------------------------------
+# Serialization for user-defined custom gear specs.
+# ---------------------------------------------------------------------------
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ---------------------------------------------------------------------------
+# Error handling & misc
+# ---------------------------------------------------------------------------
+thiserror = "1"
+log = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# Re-declare with the bundled SQLite build so the C library cross-compiles
+# into libmain.so instead of linking against a (nonexistent) system sqlite3.
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Slint's official Android backend: owns the android-activity NativeActivity
+# glue, the surface lifecycle and touch input. aa-05 == android-activity 0.5.x
+# (the version cargo-apk's manifest generation targets).
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-android-activity-05",
+    "renderer-femtovg",
+] }
+
+android_logger = "0.13"
+ndk = "0.8"
+ndk-context = "0.1"
+
+[profile.release]
+# Speed over size: the stated goal is a locked 165 Hz scroll on mid-range
+# hardware, so we optimise aggressively and pay for it with binary size
+# (irrelevant for an APK of this scale). `fat` LTO + single codegen unit
+# maximise cross-crate inlining into the hot UI/compat paths.
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+# Keep unwinding so android_logger / panic hooks can surface a Rust backtrace
+# in logcat before the process dies; `abort` would erase that crash signal.
+panic = "unwind"
+
+# ---------------------------------------------------------------------------
+# cargo-apk configuration (used by `.cargo/config.toml` -> `cargo apk`).
+# ---------------------------------------------------------------------------
+[package.metadata.android]
+package = "com.gearcompat.rust"
+label = "Gear Compat"
+version_name = "0.1.0"
+version_code = 1
+icon = "@mipmap/ic_launcher"
+target_sdk_version = 33
+min_sdk_version = 24
+build_targets = ["aarch64-linux-android", "armv7-linux-androideabi"]
+# Bundle the offline seed snapshot into the APK under assets/seed_data.json.
+# cargo-apk's asset table maps relative source path -> in-APK destination dir.
+assets = { "assets/seed_data.json" = ["seed_data"] }
+
+# Slint/femtovg renders through EGL + OpenGL ES 2.0 (GLES 3.x devices run it
+# fine; declaring 2.0 keeps minSdk 24 honest). Vulkan via wgpu is available as
+# an opt-in alternative: swap `renderer-femtovg` for `renderer-skia-vulkan` or
+# `unstable-wgpu-30` and bump glEsVersion accordingly.
+[package.metadata.android.sdk]
+enabled = true
+
+# NativeActivity entry contract for the Slint android-activity backend:
+# the loader dlopens libmain.so (crate-type cdylib above) and jumps into the
+# `android_main` symbol exported by slint's backend, which then calls our
+# `slint_main` in src/main.rs.
+[[package.metadata.android.application_activity.intent_filter]]
+name = "android.intent.action.MAIN"
+category = "android.intent.category.LAUNCHER"
+
+[[package.metadata.android.application_activity.meta_data]]
+name = "android.app.lib_name"
+value = "main"
+
+[[package.metadata.android.permissions]]
+name = "android.permission.WRITE_EXTERNAL_STORAGE"
+max_sdk_version = "28"
+
+[[package.metadata.android.permissions]]
+name = "android.permission.READ_EXTERNAL_STORAGE"
+max_sdk_version = "28"

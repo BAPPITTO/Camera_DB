@@ -1,0 +1,10 @@
+# Blank issues are disabled: every report must go through one of the typed
+# templates so the data maintainers receive machine-checkable fields.
+blank_issues_enabled: false
+contact_links:
+  - name: Discussion Board
+    url: https://github.com/your-org/gear-compat-android/discussions
+    about: Ask questions, propose features, or debate compatibility edge cases here instead of opening an issue.
+  - name: Security Report (high-voltage flashes)
+    url: https://github.com/your-org/gear-compat-android/security/advisories/new
+    about: Report incorrect trigger-voltage data that could damage hardware privately.

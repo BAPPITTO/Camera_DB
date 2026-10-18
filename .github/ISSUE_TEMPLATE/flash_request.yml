@@ -1,0 +1,60 @@
+name: Flash Request / Correction
+description: Propose a hot-shoe flash. Trigger voltage is mandatory - it protects camera electronics.
+title: "[flash] <model_name>"
+labels: ["data", "flash", "safety"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Validated against the SQLite `flashes` schema. The app flags any unit with
+        `trigger_voltage > 6.0 V` as **HIGH_VOLTAGE_RISK**, so please source this
+        number from a measurement or manufacturer datasheet - never guess.
+
+  - type: input
+    id: model_name
+    attributes:
+      label: Model Name
+      description: e.g. HVL-F46RM.
+      placeholder: HVL-F46RM
+    validations:
+      required: true
+
+  - type: input
+    id: guide_number
+    attributes:
+      label: Guide Number
+      description: GN at ISO 100 in metres (`guide_number`).
+      placeholder: "46"
+    validations:
+      required: true
+      pattern: "^[0-9]+(\\.[0-9])?$"
+
+  - type: input
+    id: trigger_voltage
+    attributes:
+      label: Trigger Voltage (V)
+      description: |
+        Measured hot-shoe trigger voltage (`trigger_voltage`). CRUCIAL SAFETY FIELD:
+        values above 6.0 V produce a HIGH_VOLTAGE_RISK warning in the app.
+      placeholder: "5.0"
+    validations:
+      required: true
+      pattern: "^[0-9]+(\\.[0-9]{1,2})?$"
+
+  - type: checkboxes
+    id: ttl
+    attributes:
+      label: TTL Compatible
+      description: Supports Sony ADI/D-TTL metering (`ttl_compatible`)?
+      options:
+        - label: This flash supports TTL
+          required: false
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Voltage Measurement Source
+      description: Link or note describing where the trigger voltage figure came from.
+      placeholder: Strobist flash-voltage database / datasheet page 4 / multimeter reading.
+    validations:
+      required: false

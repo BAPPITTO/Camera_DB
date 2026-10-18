@@ -1,0 +1,4 @@
+{
+  "schema_version": 1,
+  "note": "Optional OTA corpus; the built-in seed data in src/db/schema.rs is authoritative offline."
+}

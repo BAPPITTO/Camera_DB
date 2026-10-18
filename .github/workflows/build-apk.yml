@@ -38,6 +38,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # 2b. Setup Android SDK (sets ANDROID_HOME + cmdline-tools) ---------------
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # 2c. Install the specific platform required by Slint (Android 17 / API 37)
+      - name: Install Android Platform
+        run: |
+          sdkmanager "platforms;android-37"
+          echo "ANDROID_PLATFORM=android-37" >> $GITHUB_ENV
+
       # 3. Setup Android NDK r26b + SDK ----------------------------------------
       - name: Set up Android NDK r26b
         id: setup-ndk
@@ -46,21 +56,20 @@ jobs:
           ndk-version: r26b
           add-to-path: false
 
-      - name: Export NDK / SDK environment
+      - name: Export NDK environment
         run: |
+          # ANDROID_HOME is already exported by android-actions/setup-android@v3;
+          # do NOT override it here or the installed platforms become invisible.
           echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
-          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
 
       - name: Install Android SDK platform-tools / build-tools
         run: |
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-          curl -fsSL -o cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q cmdtools.zip -d "$ANDROID_HOME/cmdline-tools"
-          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-              "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+          # cmdline-tools are provided by android-actions/setup-android@v3 (sdkmanager on PATH).
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+          # Fail fast if no platforms are present (Slint's i-slint-backend-android-activity check).
+          ls "$ANDROID_HOME/platforms" | grep -q 'android-' || { echo "No Android platforms found" >&2; exit 1; }
 
       # 4. Setup Rust toolchain with the matrix target --------------------------
       - name: Install Rust toolchain (stable)

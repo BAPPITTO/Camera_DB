@@ -1287,7 +1287,7 @@ version = "0.1.0"
 dependencies = [
  "android_logger",
  "log",
- "ndk 0.8.0",
+ "ndk 0.9.0",
  "ndk-context",
  "rusqlite",
  "serde",

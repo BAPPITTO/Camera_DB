@@ -12,7 +12,8 @@ import {
     ScrollView,
     GroupBox,
     TabWidget,
-    Text,
+    ListView,
+    GroupBox,
 } from "std-widgets.slint";
 
 // ---------------------------------------------------------------------------
@@ -73,19 +74,19 @@ export component StatusBadge inherits Rectangle {
     in property <string> status;
     in property <string> label;
 
-    private static property <color> ok-color: #1b5e20;
-    private static property <color> warn-color: #e65100;
-    private static property <color> crit-color: #b71c1c;
-    private static property <color> info-color: #37474f;
+    property <color> ok-color: #1b5e20;
+    property <color> warn-color: #e65100;
+    property <color> crit-color: #b71c1c;
+    property <color> info-color: #37474f;
 
-    private static property <color> bg:
-        root.status == "NATIVE_FULL_FRAME" || root.status == "NATIVE_APS_C" || root.status == "SAFE" ? ok-color :
-        root.status == "NATIVE_CROP" || root.status == "CROP_MODE" ? warn-color :
-        root.status == "HIGH_VOLTAGE_RISK" ? crit-color : info-color;
+    property <color> bg:
+        ((root.status == "NATIVE_FULL_FRAME" || root.status == "NATIVE_APS_C" || root.status == "SAFE") ? ok-color :
+        ((root.status == "NATIVE_CROP" || root.status == "CROP_MODE") ? warn-color :
+        (root.status == "HIGH_VOLTAGE_RISK" ? crit-color : info-color)));
 
     width: lbl.preferred-width + 20px;
     height: lbl.preferred-height + 10px;
-    border-radius: 90deg;
+    border-radius: 90px;
     background: bg;
 
     lbl := Text {
@@ -107,7 +108,6 @@ export component AppWindow inherits Window {
     preferred-width: 420px;
     preferred-height: 780px;
     background: #101418;
-    color: #e6eaf0;
 
     // ---- data bindings (populated from Rust via set_*) ---------------------
     in property <[BodyRow]> bodies;
@@ -151,7 +151,7 @@ export component AppWindow inherits Window {
         // Header -------------------------------------------------------------
         HorizontalLayout {
             spacing: 8px;
-            alignment: start-x;
+            alignment: start;
             Text {
                 text: "GEAR COMPAT";
                 font-size: 18px;
@@ -159,7 +159,7 @@ export component AppWindow inherits Window {
                 color: #ffb74d;
                 vertical-alignment: center;
             }
-            Rectangle { width: 100%; } // spacer
+            Rectangle { horizontal-stretch: 1; }
             Button {
                 text: "\u{21bb}";
                 clicked => { root.reload(); }
@@ -168,7 +168,7 @@ export component AppWindow inherits Window {
 
         TabWidget {
             // ================================================================
-            tab-compat := TabItem {
+            Tab {
                 title: "Compatibility";
                 ScrollView {
                     VerticalLayout {
@@ -187,7 +187,7 @@ export component AppWindow inherits Window {
                                         Rectangle {
                                             width: parent.width;
                                             height: parent.height;
-                                            radius: 6px;
+                                            border-radius: 6px;
                                             border-width: b.id == root.selected-body-id ? 2px : 0px;
                                             border-color: #ffb74d;
                                             background: b.id == root.selected-body-id ? #1e2a36 : transparent;
@@ -199,7 +199,7 @@ export component AppWindow inherits Window {
                                                     Text { text: b.marketing-name; font-size: 15px; font-weight: 600; color: #e6eaf0; }
                                                     Text { text: b.model-name + " \u{b7} " + b.sensor-label + " \u{b7} " + b.megapixels-label; font-size: 12px; color: #90a4ae; }
                                                 }
-                                                Rectangle { width: 100%; }
+                                                Rectangle { horizontal-stretch: 1; }
                                                 Text { text: b.ibis-label + " \u{b7} " + b.year-label; font-size: 12px; color: #90a4ae; vertical-alignment: center; }
                                             }
                                         }
@@ -220,7 +220,7 @@ export component AppWindow inherits Window {
                                         Rectangle {
                                             width: parent.width;
                                             height: parent.height;
-                                            radius: 6px;
+                                            border-radius: 6px;
                                             border-width: l.id == root.selected-lens-id ? 2px : 0px;
                                             border-color: #4fc3f7;
                                             background: l.id == root.selected-lens-id ? #16242f : transparent;
@@ -243,8 +243,8 @@ export component AppWindow inherits Window {
                                                 }
                                                 VerticalLayout {
                                                     alignment: center;
-                                                    Text { text: l.marketing-name; font-size: 14px; font-weight: 600; color: #e6eaf0; elide: ellipsis; }
-                                                    Text { text: l.focal-label + " \u{b7} " + l.aperture-label + " \u{b7} " + l.target-label + " \u{b7} " + l.oss-label + " \u{b7} " + l.weight-label; font-size: 11px; color: #90a4ae; elide: ellipsis; }
+                                                    Text { text: l.marketing-name; font-size: 14px; font-weight: 600; color: #e6eaf0; elide: middle; }
+                                                    Text { text: l.focal-label + " \u{b7} " + l.aperture-label + " \u{b7} " + l.target-label + " \u{b7} " + l.oss-label + " \u{b7} " + l.weight-label; font-size: 11px; color: #90a4ae; elide: middle; }
                                                 }
                                             }
                                         }
@@ -270,7 +270,7 @@ export component AppWindow inherits Window {
                                         status: root.status-code;
                                         label: root.status-label;
                                     }
-                                    Rectangle { width: 100%; }
+                                    Rectangle { horizontal-stretch: 1; }
                                 }
                                 Text { text: "Body:  " + root.body-label; font-size: 13px; color: #b0bec5; }
                                 Text { text: "Lens:  " + root.lens-label; font-size: 13px; color: #b0bec5; }
@@ -284,7 +284,7 @@ export component AppWindow inherits Window {
                                         Text { text: "EFFECTIVE RES"; font-size: 10px; color: #78909c; }
                                         Text { text: root.mp-label; font-size: 17px; font-weight: 700; color: #4fc3f7; }
                                     }
-                                    Rectangle { width: 100%; }
+                                    Rectangle { horizontal-stretch: 1; }
                                 }
                                 Text {
                                     visible: root.penalty-label != "";
@@ -293,7 +293,7 @@ export component AppWindow inherits Window {
                                     font-weight: 600;
                                     color: #ffcc80;
                                 }
-                                ForEach n in compat-notes: Text {
+                                for n in compat-notes: Text {
                                     text: "\u{2022} " + n.text;
                                     wrap: word-wrap;
                                     font-size: 12px;
@@ -306,7 +306,7 @@ export component AppWindow inherits Window {
             }
 
             // ================================================================
-            tab-flashes := TabItem {
+            Tab {
                 title: "Flashes";
                 ListView {
                     for f in flashes: Rectangle {
@@ -317,7 +317,6 @@ export component AppWindow inherits Window {
                         fl-item := HorizontalLayout {
                             x: 10px; y: 10px; width: parent.width - 20px;
                             spacing: 10px;
-                            enabled: false; // clicks pass through to TouchArea
                             Rectangle {
                                 width: 8px;
                                 min-width: 8px;
@@ -329,7 +328,7 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 8px;
                                     Text { text: f.model-name; font-size: 15px; font-weight: 700; color: #e6eaf0; }
-                                    Rectangle { width: 100%; }
+                                    Rectangle { horizontal-stretch: 1; }
                                     StatusBadge { status: f.safety-status; label: f.ttl-label; }
                                 }
                                 Text { text: f.gn-label + " \u{b7} Trigger " + f.voltage-label + " \u{b7} " + f.safety-status; font-size: 12px; color: f.safe ? #90a4ae : #ef9a9a; }
@@ -347,7 +346,7 @@ export component AppWindow inherits Window {
             }
 
             // ================================================================
-            tab-gear := TabItem {
+            Tab {
                 title: "Custom Gear";
                 ScrollView {
                     VerticalLayout {
@@ -367,7 +366,6 @@ export component AppWindow inherits Window {
                                 }
                                 gear-specs-field := LineEdit {
                                     placeholder-text: "{ \"read_speed\": 300 }";
-                                    text <=> root.gear-specs;
                                 }
                                 Button {
                                     text: "Save to SQLite";
@@ -403,10 +401,10 @@ export component AppWindow inherits Window {
                                         spacing: 8px;
                                         VerticalLayout {
                                             alignment: center;
-                                            Text { text: g.user-name; font-size: 14px; font-weight: 600; color: #e6eaf0; elide: ellipsis; }
-                                            Text { text: g.type-label + " \u{b7} " + g.specs-summary; font-size: 11px; color: #90a4ae; elide: ellipsis; }
+                                            Text { text: g.user-name; font-size: 14px; font-weight: 600; color: #e6eaf0; elide: middle; }
+                                            Text { text: g.type-label + " \u{b7} " + g.specs-summary; font-size: 11px; color: #90a4ae; elide: middle; }
                                         }
-                                        Rectangle { width: 100%; }
+                                        Rectangle { horizontal-stretch: 1; }
                                         Button {
                                             text: "Delete";
                                             clicked => { root.delete-custom-gear(g.id); }
@@ -420,7 +418,7 @@ export component AppWindow inherits Window {
             }
 
             // ================================================================
-            tab-about := TabItem {
+            Tab {
                 title: "About";
                 ScrollView {
                     VerticalLayout {

@@ -9,14 +9,14 @@
 //! * On desktop the same code runs under Slint's default winit + FemtoVG
 //!   (OpenGL) platform, so `cargo run` gives an instant dev window.
 
-use gear_compat::db::Database;
-use gear_compat::ui::create_app_window;
+use gear_compat_lib::db::Database;
+use gear_compat_lib::ui::create_app_window;
 use slint::ComponentHandle;
 
 /// Open the local SQLite database (creating + seeding it on first launch) and
 /// start the Slint event loop. This body runs identically on both platforms.
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = gear_compat::data_dir();
+    let data_dir = gear_compat_lib::data_dir();
     log::info!("opening local database in {}", data_dir.display());
 
     // First launch creates + seeds the SQLite file; later launches reuse it.

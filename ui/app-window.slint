@@ -117,9 +117,9 @@ export component AppWindow inherits Window {
     in property <[NoteRow]> compat-notes;
 
     // ---- selection state ----------------------------------------------------
+    // Mirrored back from Rust after each selection so list rows can highlight.
     in property <int> selected-body-id: -1;
     in property <int> selected-lens-id: -1;
-    in property <int> selected-flash-id: -1;
 
     in property <string> body-label: "-";
     in property <string> lens-label: "-";
@@ -132,7 +132,6 @@ export component AppWindow inherits Window {
     in property <string> flash-status: "";
     in property <bool> flash-safe: true;
     in property <string> gear-type-label: "SD Card";
-    in property <string> gear-specs: "{\"read_speed\": 300, \"write_speed\": 260, \"capacity_gb\": 128}";
     in property <string> status-line: "";
 
     // ---- callbacks (implemented in src/ui/mod.rs) --------------------------

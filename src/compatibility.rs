@@ -329,6 +329,10 @@ mod tests {
         }
     }
 
+    fn body_mp_expected(base: f64) -> f64 {
+        base * (SensorType::APS_C_AREA_RATIO as f64)
+    }
+
     #[test]
     fn ff_body_with_aps_c_lens_is_crop_mode() {
         let r = calculate_compatibility(&ff_body(24.2), &e_lens(16.0, 50.0));
@@ -336,8 +340,9 @@ mod tests {
         // focal * 1.5
         assert!((r.effective_focal_length_min - 24.0).abs() < 1e-9);
         assert!((r.effective_focal_length_max - 75.0).abs() < 1e-9);
-        // megapixels * 0.444
-        assert!((r.effective_megapixels - 24.2 * 0.444).abs() < 1e-9);
+        // megapixels * APS_C_AREA_RATIO (f32 constant promoted to f64)
+        let expected = body_mp_expected(24.2);
+        assert!((r.effective_megapixels - expected).abs() < 1e-9);
         assert!(r.resolution_penalty);
     }
 

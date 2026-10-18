@@ -112,14 +112,16 @@ pub fn seed_lenses() -> Vec<Lens> {
 
 pub fn seed_flashes() -> Vec<Flash> {
     vec![
-    // Sony native TTL units, low trigger voltage. { id: 1, model_name: "HVL-F46RM".to_string(), guide_number: 46.0, trigger_voltage: 5.0, ttl_compatible: true },
-    Flash { id: 2, model_name: "HVL-F60RM2".to_string(), guide_number: 60.0, trigger_voltage: 5.0, ttl_compatible: true },
-    Flash { id: 3, model_name: "HVL-F28RM".to_string(), guide_number: 28.0, trigger_voltage: 5.0, ttl_compatible: true },
-    // Third-party legacy unit with a high-voltage hot shoe - used to exercise
-    // the HIGH_VOLTAGE_RISK path in `compatibility.rs`.
-    Flash { id: 4, model_name: "Metronix 56 (legacy)".to_string(), guide_number: 56.0, trigger_voltage: 350.0, ttl_compatible: false },
-    Flash { id: 5, model_name: "Godox V860II-S".to_string(), guide_number: 60.0, trigger_voltage: 5.4, ttl_compatible: true },
-]}
+        // Sony native TTL units, low trigger voltage.
+        Flash { id: 1, model_name: "HVL-F46RM".to_string(), guide_number: 46.0, trigger_voltage: 5.0, ttl_compatible: true },
+        Flash { id: 2, model_name: "HVL-F60RM2".to_string(), guide_number: 60.0, trigger_voltage: 5.0, ttl_compatible: true },
+        Flash { id: 3, model_name: "HVL-F28RM".to_string(), guide_number: 28.0, trigger_voltage: 5.0, ttl_compatible: true },
+        // Third-party legacy unit with a high-voltage hot shoe - used to exercise
+        // the HIGH_VOLTAGE_RISK path in `compatibility.rs`.
+        Flash { id: 4, model_name: "Metronix 56 (legacy)".to_string(), guide_number: 56.0, trigger_voltage: 350.0, ttl_compatible: false },
+        Flash { id: 5, model_name: "Godox V860II-S".to_string(), guide_number: 60.0, trigger_voltage: 5.4, ttl_compatible: true },
+    ]
+}
 
 /// Insert the master gear corpus. Idempotent: existing rows (by UNIQUE
 /// `model_name`) are left untouched so user corrections survive upgrades.

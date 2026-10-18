@@ -164,7 +164,21 @@ jobs:
           path: ${{ steps.stage.outputs.apk }}
           if-no-files-found: error
 
-      # 9. Publish to GitHub Releases with the exact asset names -------------------
+      # 9. Generate SHA256 checksums for every staged release APK -------------------
+      - name: Generate SHA256 Checksums
+        working-directory: release-assets
+        run: |
+          sha256sum *.apk > checksums.txt
+          cat checksums.txt
+
+      - name: Upload checksums artifact (per target)
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums-${{ steps.vars.outputs.abi }}
+          path: release-assets/checksums.txt
+          if-no-files-found: error
+
+      # 10. Publish to GitHub Releases with the exact asset names -------------------
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -174,6 +188,7 @@ jobs:
           files: |
             ${{ steps.stage.outputs.apk }}
             ${{ steps.stage.outputs.zip }}
+            release-assets/checksums.txt
           generate_release_notes: true
           fail_on_unmatched_files: true
         env:

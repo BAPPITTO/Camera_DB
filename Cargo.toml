@@ -78,7 +78,7 @@ slint = { version = "1.18", default-features = false, features = [
 ] }
 
 android_logger = "0.13"
-ndk = "0.8"
+ndk = "0.9"
 ndk-context = "0.1"
 
 [profile.release]
